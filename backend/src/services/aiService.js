@@ -1,15 +1,23 @@
-const FormData = require('form-data');
 const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 
-async function registerFace(imagePath) {
+function buildImageFormData(imagePath) {
+  const fileBuffer = fs.readFileSync(imagePath);
+  const ext = path.extname(imagePath).toLowerCase();
+  const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
   const form = new FormData();
-  form.append('image', fs.createReadStream(imagePath));
+  const blob = new Blob([fileBuffer], { type: mimeType });
+  form.append('image', blob, `face${ext || '.jpg'}`);
+  return form;
+}
+
+async function registerFace(imagePath) {
+  const form = buildImageFormData(imagePath);
 
   const response = await fetch(`${config.aiServiceUrl}/register`, {
     method: 'POST',
     body: form,
-    headers: form.getHeaders(),
   });
 
   if (!response.ok) {
@@ -21,15 +29,14 @@ async function registerFace(imagePath) {
 }
 
 async function recognizeFace(imagePath, employees) {
-  const form = new FormData();
-  form.append('image', fs.createReadStream(imagePath));
+  const form = buildImageFormData(imagePath);
   form.append('employees', JSON.stringify(employees));
   form.append('threshold', String(config.faceMatchThreshold));
+  form.append('ambiguity_gap', String(config.faceAmbiguityGap));
 
   const response = await fetch(`${config.aiServiceUrl}/recognize`, {
     method: 'POST',
     body: form,
-    headers: form.getHeaders(),
   });
 
   if (!response.ok) {

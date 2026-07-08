@@ -4,6 +4,10 @@ const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { registerFace } = require('../services/aiService');
+const {
+  validateEmployeeInput,
+  sanitizeEmployeePayload,
+} = require('../utils/employee');
 
 const router = express.Router();
 
@@ -59,13 +63,20 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { employeeId, name, department, phone } = req.body;
-    if (!employeeId || !name) {
-      return res.status(400).json({ error: 'employeeId and name are required' });
+    const errors = validateEmployeeInput(req.body, { requireCore: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('. ') });
     }
 
+    const data = sanitizeEmployeePayload(req.body);
+
     const employee = await prisma.employee.create({
-      data: { employeeId, name, department, phone },
+      data: {
+        employeeId: data.employeeId,
+        name: data.name,
+        department: data.department,
+        phone: data.phone,
+      },
     });
 
     res.status(201).json({
@@ -84,10 +95,21 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { employeeId, name, department, phone } = req.body;
+    const errors = validateEmployeeInput(req.body, { requireCore: true });
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('. ') });
+    }
+
+    const data = sanitizeEmployeePayload(req.body);
+
     const employee = await prisma.employee.update({
       where: { id: Number(req.params.id) },
-      data: { employeeId, name, department, phone },
+      data: {
+        employeeId: data.employeeId,
+        name: data.name,
+        department: data.department,
+        phone: data.phone,
+      },
     });
     res.json({
       ...employee,
@@ -130,8 +152,10 @@ router.post('/:id/register-face', upload.single('image'), async (req, res) => {
     }
 
     const result = await registerFace(req.file.path);
-    if (!result.embedding || result.embedding.length === 0) {
-      return res.status(422).json({ error: 'No face detected in image' });
+    if (!result.success || !result.embedding || result.embedding.length === 0) {
+      return res.status(422).json({
+        error: result.message || 'No face detected in image',
+      });
     }
 
     const photoPath = `/uploads/${path.basename(req.file.path)}`;

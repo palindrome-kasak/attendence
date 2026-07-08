@@ -35,8 +35,8 @@ export default function LiveScan() {
     <div className="mx-auto max-w-xl">
       <h2 className="mb-2 text-2xl font-bold">Live Scan</h2>
       <p className="mb-8 text-slate-500">
-        Start the camera, capture a photo, and mark attendance — like a fingerprint
-        scanner.
+        Start the camera, look at it naturally, and capture attendance. Printed
+        photos and phone screens are blocked.
       </p>
 
       {!cameraOpen && !loading && !result && (
@@ -58,6 +58,7 @@ export default function LiveScan() {
       {cameraOpen && (
         <WebcamCapture
           active={cameraOpen}
+          requireMotionCheck
           onCapture={handleCapture}
           onCancel={() => setCameraOpen(false)}
         />
@@ -101,9 +102,16 @@ export default function LiveScan() {
                   {formatTime(result.attendance.checkIn)}
                 </p>
               )}
-              {result.confidence && (
-                <p className="mt-2 text-sm text-slate-500">
+              {result.confidence != null && (
+                <p
+                  className={`mt-2 text-sm ${
+                    result.confidence >= 75
+                      ? 'text-slate-500'
+                      : 'font-medium text-amber-600'
+                  }`}
+                >
                   Confidence {result.confidence}%
+                  {result.confidence < 75 ? ' — low match' : ''}
                 </p>
               )}
             </>

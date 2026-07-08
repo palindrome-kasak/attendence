@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import WebcamCapture from '../components/WebcamCapture';
 
 const emptyForm = { employeeId: '', name: '', department: '', phone: '' };
+
+const MAX_UPLOAD_SIZE_MB = 10;
+const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
@@ -12,6 +15,9 @@ export default function Employees() {
   const [message, setMessage] = useState('');
   const [registeringId, setRegisteringId] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [uploadTargetId, setUploadTargetId] = useState(null);
+  const formRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   async function loadEmployees() {
     const data = await api.getEmployees();
@@ -27,10 +33,23 @@ export default function Employees() {
     setEditingId(null);
   }
 
+  function handlePhoneChange(value) {
+    setForm({ ...form, phone: value.replace(/\D/g, '') });
+  }
+
+  function validateForm() {
+    if (form.phone && !/^\d{10,15}$/.test(form.phone)) {
+      setError('Phone must contain only numbers (10-15 digits), or leave it empty');
+      return false;
+    }
+    return true;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setMessage('');
+    if (!validateForm()) return;
     try {
       if (editingId) {
         await api.updateEmployee(editingId, form);
@@ -53,6 +72,12 @@ export default function Employees() {
       name: employee.name,
       department: employee.department || '',
       phone: employee.phone || '',
+    });
+    setError('');
+    setMessage(`Editing ${employee.name}. Update the form above and click Update.`);
+
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
 
@@ -80,21 +105,52 @@ export default function Employees() {
     }
   }
 
-  async function handleFileUpload(e, employeeId) {
+  function openUploadPicker(employeeId) {
+    setUploadTargetId(employeeId);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }
+
+  async function handleFileUpload(e) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    const employeeId = uploadTargetId;
+    e.target.value = '';
+
+    if (!file || !employeeId) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError(
+        `File too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is ${MAX_UPLOAD_SIZE_MB} MB.`
+      );
+      setUploadTargetId(null);
+      return;
+    }
+
     setError('');
+    setMessage('');
     try {
       await api.registerFace(employeeId, file);
       setMessage('Face registered from photo');
       await loadEmployees();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setUploadTargetId(null);
     }
   }
 
   return (
     <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/jpg"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+
       <h2 className="mb-6 text-2xl font-bold">Employees</h2>
 
       {error && (
@@ -108,10 +164,19 @@ export default function Employees() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="card mb-8">
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className={`card mb-8 ${editingId ? 'ring-2 ring-brand-500' : ''}`}
+      >
         <h3 className="mb-4 text-lg font-semibold">
           {editingId ? 'Edit Employee' : 'Add Employee'}
         </h3>
+        <p className="mb-4 text-sm text-slate-500">
+          For face registration, use a clear photo of the actual employee only.
+          Random or wrong photos can cause incorrect attendance matches. Upload
+          limit: {MAX_UPLOAD_SIZE_MB} MB (JPEG, PNG, or WebP).
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <input
             className="input"
@@ -135,9 +200,12 @@ export default function Employees() {
           />
           <input
             className="input"
-            placeholder="Phone"
+            placeholder="Phone (optional)"
             value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            onChange={(e) => handlePhoneChange(e.target.value)}
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={15}
           />
         </div>
         <div className="mt-4 flex gap-3">
@@ -206,21 +274,21 @@ export default function Employees() {
                 <td className="py-3">
                   <div className="flex flex-wrap gap-2">
                     <button
+                      type="button"
                       className="btn-secondary text-xs"
                       onClick={() => startEdit(emp)}
                     >
                       Edit
                     </button>
-                    <label className="btn-secondary cursor-pointer text-xs">
-                      Upload Photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => handleFileUpload(e, emp.id)}
-                      />
-                    </label>
                     <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => openUploadPicker(emp.id)}
+                    >
+                      Upload Photo
+                    </button>
+                    <button
+                      type="button"
                       className="btn-primary text-xs"
                       onClick={() => {
                         setRegisteringId(emp.id);
@@ -230,6 +298,7 @@ export default function Employees() {
                       Capture Face
                     </button>
                     <button
+                      type="button"
                       className="text-xs text-red-600 hover:underline"
                       onClick={() => handleDelete(emp.id)}
                     >

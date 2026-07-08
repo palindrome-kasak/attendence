@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import face_recognition
 import numpy as np
@@ -15,17 +15,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-def load_image(file_bytes: bytes) -> np.ndarray:
-    image = face_recognition.load_image_file(file_bytes)
-    return image
+DEFAULT_THRESHOLD = 0.45
+DEFAULT_AMBIGUITY_GAP = 0.08
 
 
-def get_face_embedding(image: np.ndarray) -> Optional[List[float]]:
-    encodings = face_recognition.face_encodings(image)
+def get_single_face_embedding(
+    image: np.ndarray, num_jitters: int = 1
+) -> Tuple[Optional[List[float]], Optional[str]]:
+    locations = face_recognition.face_locations(image)
+
+    if len(locations) == 0:
+        return None, "No face detected. Use a clear front-facing photo."
+
+    if len(locations) > 1:
+        return None, "Multiple faces detected. Use a photo with only one person."
+
+    encodings = face_recognition.face_encodings(image, locations, num_jitters=num_jitters)
     if not encodings:
-        return None
-    return encodings[0].tolist()
+        return None, "Could not generate face encoding. Try a clearer photo."
+
+    return encodings[0].tolist(), None
 
 
 @app.get("/health")
@@ -39,10 +48,10 @@ async def register_face(image: UploadFile = File(...)):
     import io
 
     image_array = face_recognition.load_image_file(io.BytesIO(contents))
-    embedding = get_face_embedding(image_array)
+    embedding, error = get_single_face_embedding(image_array, num_jitters=5)
 
     if embedding is None:
-        return {"success": False, "message": "No face detected in image", "embedding": []}
+        return {"success": False, "message": error, "embedding": []}
 
     return {"success": True, "message": "Face detected", "embedding": embedding}
 
@@ -51,38 +60,50 @@ async def register_face(image: UploadFile = File(...)):
 async def recognize_face(
     image: UploadFile = File(...),
     employees: str = Form(...),
-    threshold: float = Form(0.6),
+    threshold: float = Form(DEFAULT_THRESHOLD),
+    ambiguity_gap: float = Form(DEFAULT_AMBIGUITY_GAP),
 ):
     contents = await image.read()
     import io
 
     image_array = face_recognition.load_image_file(io.BytesIO(contents))
-    unknown_encoding = get_face_embedding(image_array)
+    unknown_encoding, error = get_single_face_embedding(image_array, num_jitters=2)
 
     if unknown_encoding is None:
-        return {"matched": False, "message": "No face detected in image"}
+        return {"matched": False, "message": error or "No face detected in image"}
 
     employee_list = json.loads(employees)
     if not employee_list:
         return {"matched": False, "message": "No registered employees to compare"}
 
     unknown_np = np.array(unknown_encoding)
-    best_match = None
-    best_distance = float("inf")
+    matches = []
 
     for employee in employee_list:
         stored = np.array(employee["embedding"])
-        distance = face_recognition.face_distance([stored], unknown_np)[0]
-        if distance < best_distance:
-            best_distance = distance
-            best_match = employee
+        distance = float(face_recognition.face_distance([stored], unknown_np)[0])
+        matches.append((distance, employee))
 
-    if best_match is None or best_distance > threshold:
+    matches.sort(key=lambda item: item[0])
+    best_distance, best_match = matches[0]
+
+    if best_distance > threshold:
+        confidence = round(max(0, 1 - best_distance) * 100, 1)
         return {
             "matched": False,
-            "message": "Unknown person",
-            "distance": best_distance if best_distance != float("inf") else None,
+            "message": "Unknown person — face does not match any registered employee",
+            "confidence": confidence,
+            "distance": best_distance,
         }
+
+    if len(matches) > 1:
+        second_distance = matches[1][0]
+        if second_distance - best_distance < ambiguity_gap:
+            return {
+                "matched": False,
+                "message": "Face match is ambiguous. Please register clearer photos or try again.",
+                "distance": best_distance,
+            }
 
     confidence = round(max(0, 1 - best_distance) * 100, 1)
 
@@ -92,5 +113,5 @@ async def recognize_face(
         "employeeName": best_match["name"],
         "employeeCode": best_match["employeeId"],
         "confidence": confidence,
-        "distance": float(best_distance),
+        "distance": best_distance,
     }

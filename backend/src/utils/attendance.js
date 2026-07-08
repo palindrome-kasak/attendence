@@ -1,6 +1,4 @@
-function getTodayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
+const { getTodayDateString } = require('./reports');
 
 function parseTimeOnDate(timeStr, dateStr) {
   return new Date(`${dateStr}T${timeStr}:00`);

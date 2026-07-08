@@ -20,6 +20,14 @@ async function request(path, options = {}) {
     headers,
   });
 
+  if (options.raw) {
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || data.message || 'Request failed');
+    }
+    return response;
+  }
+
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -39,6 +47,27 @@ export const api = {
   getMe: () => request('/auth/me'),
 
   getDashboard: () => request('/dashboard'),
+
+  getDashboardStatus: (status) => request(`/dashboard/today/${status}`),
+
+  getMonthlyReport: (month) =>
+    request(`/reports/monthly?month=${encodeURIComponent(month)}`),
+
+  exportMonthlyReport: async (month) => {
+    const response = await request(
+      `/reports/export?month=${encodeURIComponent(month)}&format=csv`,
+      { raw: true }
+    );
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `attendance-${month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 
   getEmployees: () => request('/employees'),
 
@@ -72,4 +101,9 @@ export const api = {
   },
 
   getTodayAttendance: () => request('/attendance/today'),
+
+  getSettings: () => request('/settings'),
+
+  updateSettings: (data) =>
+    request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 };

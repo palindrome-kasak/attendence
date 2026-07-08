@@ -3,6 +3,7 @@ const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { recognizeFace } = require('../services/aiService');
+const config = require('../config');
 const { getTodayDateString, determineStatus } = require('../utils/attendance');
 
 const router = express.Router();
@@ -52,10 +53,24 @@ router.post('/scan', upload.single('image'), async (req, res) => {
 
     const result = await recognizeFace(req.file.path, payload);
 
+    const appSettings = await prisma.settings.findFirst();
+    const minConfidence =
+      appSettings?.minFaceConfidence ?? config.minFaceConfidence;
+
     if (!result.matched) {
       return res.status(404).json({
         matched: false,
         message: result.message || 'Unknown person',
+        confidence: result.confidence ?? null,
+      });
+    }
+
+    if (result.confidence < minConfidence) {
+      return res.status(404).json({
+        matched: false,
+        message: `Face matched at ${result.confidence}% but minimum is ${minConfidence}%. Try better lighting, face the camera directly, or re-register using Capture Face in Employees.`,
+        confidence: result.confidence,
+        minConfidence,
       });
     }
 

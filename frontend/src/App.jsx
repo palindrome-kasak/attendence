@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Employees from './pages/Employees';
 import LiveScan from './pages/LiveScan';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -38,6 +40,8 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="employees" element={<Employees />} />
         <Route path="live-scan" element={<LiveScan />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

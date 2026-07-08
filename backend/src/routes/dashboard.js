@@ -7,53 +7,140 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-router.get('/', async (_req, res) => {
-  try {
-    const date = getTodayDateString();
-    const totalEmployees = await prisma.employee.count();
-    const registeredFaces = await prisma.employee.count({
-      where: { faceEmbedding: { not: null } },
-    });
+async function getTodayContext() {
+  const date = getTodayDateString();
 
-    const todayRecords = await prisma.attendance.findMany({
-      where: { date },
-      include: {
-        employee: {
-          select: { id: true, name: true, employeeId: true, department: true },
+  const registeredEmployees = await prisma.employee.findMany({
+    where: { faceEmbedding: { not: null } },
+    select: {
+      id: true,
+      employeeId: true,
+      name: true,
+      department: true,
+      phone: true,
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const todayRecords = await prisma.attendance.findMany({
+    where: { date },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          employeeId: true,
+          name: true,
+          department: true,
+          phone: true,
         },
       },
-      orderBy: { checkIn: 'desc' },
-    });
+    },
+    orderBy: { checkIn: 'asc' },
+  });
 
-    const presentIds = new Set(todayRecords.map((r) => r.employeeId));
+  const presentIds = new Set(todayRecords.map((record) => record.employeeId));
+
+  return { date, registeredEmployees, todayRecords, presentIds };
+}
+
+function mapPresent(records) {
+  return records.map((record) => ({
+    id: record.employee.id,
+    employeeId: record.employee.employeeId,
+    name: record.employee.name,
+    department: record.employee.department,
+    phone: record.employee.phone,
+    checkIn: record.checkIn,
+    status: record.status,
+    confidence: record.confidence,
+  }));
+}
+
+function mapAbsent(registeredEmployees, presentIds) {
+  return registeredEmployees
+    .filter((employee) => !presentIds.has(employee.id))
+    .map((employee) => ({
+      id: employee.id,
+      employeeId: employee.employeeId,
+      name: employee.name,
+      department: employee.department,
+      phone: employee.phone,
+    }));
+}
+
+router.get('/', async (_req, res) => {
+  try {
+    const { date, registeredEmployees, todayRecords, presentIds } =
+      await getTodayContext();
+
     const present = todayRecords.length;
-    const absent = Math.max(0, registeredFaces - present);
-    const late = todayRecords.filter((r) => r.status === 'late').length;
-
+    const absent = Math.max(0, registeredEmployees.length - present);
+    const late = todayRecords.filter((record) => record.status === 'late').length;
+    const totalEmployees = await prisma.employee.count();
     const settings = await prisma.settings.findFirst();
 
     res.json({
       date,
       factoryName: settings?.factoryName || 'Factory Attendance',
+      settings: settings
+        ? {
+            shiftStart: settings.shiftStart,
+            shiftEnd: settings.shiftEnd,
+            lateAfter: settings.lateAfter,
+          }
+        : null,
       stats: {
         totalEmployees,
-        registeredFaces,
+        registeredFaces: registeredEmployees.length,
         present,
         absent,
         late,
       },
-      recentAttendance: todayRecords.slice(0, 10).map((r) => ({
-        id: r.id,
-        employeeName: r.employee.name,
-        employeeId: r.employee.employeeId,
-        checkIn: r.checkIn,
-        status: r.status,
-        confidence: r.confidence,
+      recentAttendance: todayRecords.slice(0, 10).map((record) => ({
+        id: record.id,
+        employeeName: record.employee.name,
+        employeeId: record.employee.employeeId,
+        checkIn: record.checkIn,
+        status: record.status,
+        confidence: record.confidence,
       })),
     });
   } catch (err) {
     console.error('logName=getDashboardFailed, error=', err.message);
     res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
+router.get('/today/:status', async (req, res) => {
+  try {
+    const status = req.params.status;
+    const allowed = ['present', 'absent', 'late'];
+
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: 'Status must be present, absent, or late' });
+    }
+
+    const { date, registeredEmployees, todayRecords, presentIds } =
+      await getTodayContext();
+
+    let employees = [];
+    if (status === 'present') {
+      employees = mapPresent(todayRecords);
+    } else if (status === 'absent') {
+      employees = mapAbsent(registeredEmployees, presentIds);
+    } else {
+      employees = mapPresent(todayRecords.filter((record) => record.status === 'late'));
+    }
+
+    res.json({
+      date,
+      status,
+      count: employees.length,
+      employees,
+    });
+  } catch (err) {
+    console.error('logName=getDashboardStatusFailed, error=', err.message);
+    res.status(500).json({ error: 'Failed to fetch employee list' });
   }
 });
 
