@@ -3,6 +3,7 @@ dist/
 build/
 .env
 .env.local
+frontend/public/_redirects
 *.db
 *.db-journal
 uploads/

@@ -1,0 +1,17 @@
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build:netlify"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# BACKEND_URL must be set in Netlify UI (Site settings → Environment variables)
+# Example: https://faceattend-api.onrender.com
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

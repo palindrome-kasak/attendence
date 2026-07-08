@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const authRoutes = require('./routes/auth');
@@ -11,9 +12,14 @@ const settingsRoutes = require('./routes/settings');
 
 const app = express();
 
+const uploadDir = path.resolve(__dirname, '../', config.uploadDir);
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.resolve(__dirname, '../', config.uploadDir)));
+app.use('/uploads', express.static(uploadDir));
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'attendance-backend' });

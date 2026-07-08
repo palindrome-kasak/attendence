@@ -1,0 +1,41 @@
+# Deploy backend + AI service on Render (free tier).
+# After deploy, set BACKEND_URL in Netlify to the faceattend-api URL.
+
+services:
+  - type: web
+    name: faceattend-ai
+    runtime: docker
+    rootDir: ai-service
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+
+  - type: web
+    name: faceattend-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    healthCheckPath: /api/health
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run seed
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        value: file:./dev.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AI_SERVICE_URL
+        value: https://faceattend-ai.onrender.com
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: FACE_MATCH_THRESHOLD
+        value: "0.5"
+      - key: MIN_FACE_CONFIDENCE
+        value: "65"
+      - key: FACE_AMBIGUITY_GAP
+        value: "0.08"
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "10"
