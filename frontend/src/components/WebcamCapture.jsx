@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const MOTION_DELAY_MS = 450;
-const MIN_MOTION_SCORE = 2.5;
+const FRAME_GAP_MS = 350;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,33 +10,27 @@ function captureFrame(video, canvas, ctx) {
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 480;
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-function frameMotionScore(frameA, frameB) {
-  const pixels = frameA.data.length / 4;
-  let totalDiff = 0;
-
-  for (let i = 0; i < frameA.data.length; i += 4) {
-    totalDiff += Math.abs(frameA.data[i] - frameB.data[i]);
-    totalDiff += Math.abs(frameA.data[i + 1] - frameB.data[i + 1]);
-    totalDiff += Math.abs(frameA.data[i + 2] - frameB.data[i + 2]);
-  }
-
-  return totalDiff / (pixels * 3);
+function frameToBlob(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
+  });
 }
 
 export default function WebcamCapture({
   onCapture,
   onCancel,
   active,
-  requireMotionCheck = false,
+  multiFrameCount = 1,
+  captureLabel = 'Capture',
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const [error, setError] = useState('');
   const [capturing, setCapturing] = useState(false);
+  const [status, setStatus] = useState('');
 
   useEffect(() => {
     if (!active) {
@@ -47,6 +40,7 @@ export default function WebcamCapture({
       }
       setError('');
       setCapturing(false);
+      setStatus('');
       return undefined;
     }
 
@@ -55,7 +49,11 @@ export default function WebcamCapture({
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: 640, height: 480 },
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
           audio: false,
         });
         if (!mounted) {
@@ -65,6 +63,7 @@ export default function WebcamCapture({
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
         }
         setError('');
       } catch (err) {
@@ -83,16 +82,13 @@ export default function WebcamCapture({
     };
   }, [active]);
 
-  function frameToBlob(canvas) {
-    return new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
-    });
-  }
-
   async function capture() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!video || !canvas || video.readyState < 2) {
+      setError('Camera is still starting. Please wait a second and try again.');
+      return;
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -101,26 +97,32 @@ export default function WebcamCapture({
     setError('');
 
     try {
-      if (requireMotionCheck) {
-        const frame1 = captureFrame(video, canvas, ctx);
-        await sleep(MOTION_DELAY_MS);
-        const frame2 = captureFrame(video, canvas, ctx);
-        const motionScore = frameMotionScore(frame1, frame2);
+      const frames = Math.max(1, multiFrameCount);
 
-        if (motionScore < MIN_MOTION_SCORE) {
-          setError(
-            'Live face not detected. Do not use a photo or phone screen — look directly at the camera.'
-          );
-          return;
-        }
-      } else {
-        captureFrame(video, canvas, ctx);
+      if (frames > 1) {
+        setStatus(`Capturing ${frames} live frames...`);
       }
 
-      const blob = await frameToBlob(canvas);
-      if (blob) onCapture(blob);
+      const blobs = [];
+      for (let index = 0; index < frames; index += 1) {
+        if (index > 0) {
+          setStatus(`Hold still... frame ${index + 1} of ${frames}`);
+          await sleep(FRAME_GAP_MS);
+        }
+        captureFrame(video, canvas, ctx);
+        const blob = await frameToBlob(canvas);
+        if (blob) blobs.push(blob);
+      }
+
+      if (blobs.length === 0) {
+        setError('Could not capture image from camera.');
+        return;
+      }
+
+      onCapture(blobs.length === 1 ? blobs[0] : blobs);
     } finally {
       setCapturing(false);
+      setStatus('');
     }
   }
 
@@ -129,13 +131,14 @@ export default function WebcamCapture({
   return (
     <div className="card mx-auto max-w-lg text-center">
       <h3 className="mb-4 text-lg font-semibold">Camera</h3>
-      {requireMotionCheck && (
+      {multiFrameCount > 1 && (
         <p className="mb-3 text-sm text-slate-500">
-          Look at the camera naturally. Printed photos and phone screens are not
-          allowed.
+          Look at the camera and blink naturally. We capture {multiFrameCount}{' '}
+          live frames to verify a real person.
         </p>
       )}
       {error && <p className="mb-4 text-red-600">{error}</p>}
+      {status && !error && <p className="mb-4 text-sm text-brand-600">{status}</p>}
       <video
         ref={videoRef}
         autoPlay
@@ -145,12 +148,8 @@ export default function WebcamCapture({
       />
       <canvas ref={canvasRef} className="hidden" />
       <div className="flex justify-center gap-3">
-        <button
-          className="btn-primary"
-          onClick={capture}
-          disabled={capturing}
-        >
-          {capturing ? 'Checking...' : 'Capture'}
+        <button className="btn-primary" onClick={capture} disabled={capturing}>
+          {capturing ? 'Capturing...' : captureLabel}
         </button>
         <button className="btn-secondary" onClick={onCancel} disabled={capturing}>
           Cancel

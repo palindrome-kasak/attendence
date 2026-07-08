@@ -1,14 +1,37 @@
 const express = require('express');
 const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
-const upload = require('../middleware/upload');
-const { recognizeFace } = require('../services/aiService');
+const { uploadFaceFields } = require('../middleware/upload');
+const {
+  recognizeFace,
+  recognizeFaceLive,
+  parseStoredEmbeddings,
+} = require('../services/aiService');
 const config = require('../config');
 const { getTodayDateString, determineStatus } = require('../utils/attendance');
 
 const router = express.Router();
 
 router.use(authMiddleware);
+
+function getUploadedImagePaths(req) {
+  const multi = req.files?.images;
+  if (multi?.length >= 2) {
+    return multi.map((file) => file.path);
+  }
+
+  const single = req.files?.image?.[0] || req.file;
+  return single ? [single.path] : [];
+}
+
+function buildEmployeePayload(employees) {
+  return employees.map((emp) => ({
+    id: emp.id,
+    name: emp.name,
+    employeeId: emp.employeeId,
+    embeddings: parseStoredEmbeddings(emp.faceEmbedding),
+  }));
+}
 
 router.get('/today', async (_req, res) => {
   try {
@@ -29,10 +52,11 @@ router.get('/today', async (_req, res) => {
   }
 });
 
-router.post('/scan', upload.single('image'), async (req, res) => {
+router.post('/scan', uploadFaceFields, async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Image file is required' });
+    const imagePaths = getUploadedImagePaths(req);
+    if (imagePaths.length === 0) {
+      return res.status(400).json({ error: 'At least one image is required' });
     }
 
     const employees = await prisma.employee.findMany({
@@ -44,14 +68,11 @@ router.post('/scan', upload.single('image'), async (req, res) => {
       return res.status(422).json({ error: 'No employees with registered faces' });
     }
 
-    const payload = employees.map((emp) => ({
-      id: emp.id,
-      name: emp.name,
-      employeeId: emp.employeeId,
-      embedding: JSON.parse(emp.faceEmbedding),
-    }));
-
-    const result = await recognizeFace(req.file.path, payload);
+    const payload = buildEmployeePayload(employees);
+    const result =
+      imagePaths.length >= 2
+        ? await recognizeFaceLive(imagePaths, payload)
+        : await recognizeFace(imagePaths[0], payload);
 
     const appSettings = await prisma.settings.findFirst();
     const minConfidence =
@@ -62,15 +83,17 @@ router.post('/scan', upload.single('image'), async (req, res) => {
         matched: false,
         message: result.message || 'Unknown person',
         confidence: result.confidence ?? null,
+        live: result.live ?? null,
       });
     }
 
     if (result.confidence < minConfidence) {
       return res.status(404).json({
         matched: false,
-        message: `Face matched at ${result.confidence}% but minimum is ${minConfidence}%. Try better lighting, face the camera directly, or re-register using Capture Face in Employees.`,
+        message: `Face matched at ${result.confidence}% but minimum is ${minConfidence}%. Re-register using Capture Face in Employees (3 live frames).`,
         confidence: result.confidence,
         minConfidence,
+        live: result.live ?? null,
       });
     }
 
@@ -97,6 +120,7 @@ router.post('/scan', upload.single('image'), async (req, res) => {
         },
         attendance: existing,
         confidence: result.confidence,
+        live: result.live ?? null,
       });
     }
 
@@ -132,6 +156,7 @@ router.post('/scan', upload.single('image'), async (req, res) => {
         confidence: attendance.confidence,
       },
       confidence: result.confidence,
+      live: result.live ?? null,
     });
   } catch (err) {
     console.error('logName=scanAttendanceFailed, error=', err.message);

@@ -15,14 +15,14 @@ export default function LiveScan() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
-  async function handleCapture(blob) {
+  async function handleCapture(capture) {
     setCameraOpen(false);
     setLoading(true);
     setError('');
     setResult(null);
 
     try {
-      const data = await api.scanAttendance(blob);
+      const data = await api.scanAttendance(capture);
       setResult(data);
     } catch (err) {
       setError(err.message);
@@ -58,7 +58,8 @@ export default function LiveScan() {
       {cameraOpen && (
         <WebcamCapture
           active={cameraOpen}
-          requireMotionCheck
+          multiFrameCount={3}
+          captureLabel="Capture Attendance"
           onCapture={handleCapture}
           onCancel={() => setCameraOpen(false)}
         />
@@ -66,7 +67,9 @@ export default function LiveScan() {
 
       {loading && (
         <div className="card text-center">
-          <p className="text-slate-600">Recognizing face...</p>
+          <p className="text-slate-600">
+            Verifying live face and matching identity...
+          </p>
         </div>
       )}
 

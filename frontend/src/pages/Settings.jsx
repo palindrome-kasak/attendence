@@ -6,7 +6,7 @@ const emptyForm = {
   shiftStart: '09:00',
   shiftEnd: '18:00',
   lateAfter: '09:15',
-  minFaceConfidence: 70,
+  minFaceConfidence: 65,
 };
 
 function formatTimeLabel(time) {
@@ -33,7 +33,7 @@ export default function Settings() {
           shiftStart: settings.shiftStart,
           shiftEnd: settings.shiftEnd,
           lateAfter: settings.lateAfter,
-          minFaceConfidence: settings.minFaceConfidence ?? 70,
+          minFaceConfidence: settings.minFaceConfidence ?? 65,
         });
       })
       .catch((err) => setError(err.message))
@@ -53,7 +53,7 @@ export default function Settings() {
         shiftStart: result.settings.shiftStart,
         shiftEnd: result.settings.shiftEnd,
         lateAfter: result.settings.lateAfter,
-        minFaceConfidence: result.settings.minFaceConfidence ?? 70,
+        minFaceConfidence: result.settings.minFaceConfidence ?? 65,
       });
       setMessage('Settings saved successfully.');
     } catch (err) {

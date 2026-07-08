@@ -2,8 +2,12 @@ const express = require('express');
 const path = require('path');
 const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
-const upload = require('../middleware/upload');
-const { registerFace } = require('../services/aiService');
+const { uploadFaceFields } = require('../middleware/upload');
+const {
+  registerFace,
+  registerFaceMulti,
+  serializeEmbeddings,
+} = require('../services/aiService');
 const {
   validateEmployeeInput,
   sanitizeEmployeePayload,
@@ -12,6 +16,16 @@ const {
 const router = express.Router();
 
 router.use(authMiddleware);
+
+function getUploadedImagePaths(req) {
+  const multi = req.files?.images;
+  if (multi?.length >= 2) {
+    return multi.map((file) => file.path);
+  }
+
+  const single = req.files?.image?.[0] || req.file;
+  return single ? [single.path] : [];
+}
 
 router.get('/', async (_req, res) => {
   try {
@@ -138,9 +152,10 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-router.post('/:id/register-face', upload.single('image'), async (req, res) => {
+router.post('/:id/register-face', uploadFaceFields, async (req, res) => {
   try {
-    if (!req.file) {
+    const imagePaths = getUploadedImagePaths(req);
+    if (imagePaths.length === 0) {
       return res.status(400).json({ error: 'Image file is required' });
     }
 
@@ -151,24 +166,35 @@ router.post('/:id/register-face', upload.single('image'), async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    const result = await registerFace(req.file.path);
+    const result =
+      imagePaths.length >= 2
+        ? await registerFaceMulti(imagePaths)
+        : await registerFace(imagePaths[0]);
+
     if (!result.success || !result.embedding || result.embedding.length === 0) {
       return res.status(422).json({
         error: result.message || 'No face detected in image',
       });
     }
 
-    const photoPath = `/uploads/${path.basename(req.file.path)}`;
+    const photoFile = req.files?.images?.[0] || req.files?.image?.[0] || req.file;
+    const photoPath = photoFile
+      ? `/uploads/${path.basename(photoFile.path)}`
+      : employee.photoPath;
+
     const updated = await prisma.employee.update({
       where: { id: employee.id },
       data: {
-        faceEmbedding: JSON.stringify(result.embedding),
+        faceEmbedding: serializeEmbeddings(result.embeddings, result.embedding),
         photoPath,
       },
     });
 
     res.json({
-      message: 'Face registered successfully',
+      message:
+        imagePaths.length >= 2
+          ? 'Face registered from live captures'
+          : 'Face registered successfully',
       employee: {
         id: updated.id,
         name: updated.name,

@@ -92,12 +92,16 @@ export default function Employees() {
     }
   }
 
-  async function handleFaceRegister(blob) {
+  async function handleFaceRegister(capture) {
     setCameraOpen(false);
     setError('');
     try {
-      await api.registerFace(registeringId, blob);
-      setMessage('Face registered successfully');
+      await api.registerFace(registeringId, capture);
+      setMessage(
+        Array.isArray(capture)
+          ? 'Face registered from live captures'
+          : 'Face registered successfully'
+      );
       setRegisteringId(null);
       await loadEmployees();
     } catch (err) {
@@ -173,9 +177,10 @@ export default function Employees() {
           {editingId ? 'Edit Employee' : 'Add Employee'}
         </h3>
         <p className="mb-4 text-sm text-slate-500">
-          For face registration, use a clear photo of the actual employee only.
-          Random or wrong photos can cause incorrect attendance matches. Upload
-          limit: {MAX_UPLOAD_SIZE_MB} MB (JPEG, PNG, or WebP).
+          For best recognition, use <strong>Capture Face</strong> (3 live webcam
+          frames). Uploaded photos work but may match less reliably at the
+          attendance kiosk. Upload limit: {MAX_UPLOAD_SIZE_MB} MB (JPEG, PNG, or
+          WebP).
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <input
@@ -224,6 +229,8 @@ export default function Employees() {
         <div className="mb-8">
           <WebcamCapture
             active={cameraOpen}
+            multiFrameCount={3}
+            captureLabel="Register Face"
             onCapture={handleFaceRegister}
             onCancel={() => {
               setCameraOpen(false);

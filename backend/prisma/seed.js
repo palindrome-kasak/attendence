@@ -24,7 +24,7 @@ async function main() {
         shiftStart: '09:00',
         shiftEnd: '18:00',
         lateAfter: '09:15',
-        minFaceConfidence: 70,
+        minFaceConfidence: 65,
       },
     });
   }

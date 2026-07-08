@@ -80,9 +80,20 @@ export const api = {
   deleteEmployee: (id) =>
     request(`/employees/${id}`, { method: 'DELETE' }),
 
-  registerFace: (id, imageBlob) => {
+  registerFace: (id, imageBlobOrBlobs) => {
     const form = new FormData();
-    form.append('image', imageBlob, 'face.jpg');
+    const blobs = Array.isArray(imageBlobOrBlobs)
+      ? imageBlobOrBlobs
+      : [imageBlobOrBlobs];
+
+    if (blobs.length >= 2) {
+      blobs.forEach((blob, index) => {
+        form.append('images', blob, `frame-${index + 1}.jpg`);
+      });
+    } else {
+      form.append('image', blobs[0], 'face.jpg');
+    }
+
     return request(`/employees/${id}/register-face`, {
       method: 'POST',
       body: form,
@@ -90,9 +101,20 @@ export const api = {
     });
   },
 
-  scanAttendance: (imageBlob) => {
+  scanAttendance: (imageBlobOrBlobs) => {
     const form = new FormData();
-    form.append('image', imageBlob, 'scan.jpg');
+    const blobs = Array.isArray(imageBlobOrBlobs)
+      ? imageBlobOrBlobs
+      : [imageBlobOrBlobs];
+
+    if (blobs.length >= 2) {
+      blobs.forEach((blob, index) => {
+        form.append('images', blob, `scan-${index + 1}.jpg`);
+      });
+    } else {
+      form.append('image', blobs[0], 'scan.jpg');
+    }
+
     return request('/attendance/scan', {
       method: 'POST',
       body: form,

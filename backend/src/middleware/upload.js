@@ -27,4 +27,10 @@ const upload = multer({
   },
 });
 
+const uploadFaceFields = upload.fields([
+  { name: 'images', maxCount: 3 },
+  { name: 'image', maxCount: 1 },
+]);
+
 module.exports = upload;
+module.exports.uploadFaceFields = uploadFaceFields;
