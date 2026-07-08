@@ -49,7 +49,14 @@ npm run seed
 npm run dev
 ```
 
-Default admin: `admin@factory.com` / `admin123`
+Default admins (2 factories):
+
+| Factory | Email | Password |
+|---------|-------|----------|
+| Sunrise Textiles (Factory 1) | `admin@factory1.com` | `factory1123` |
+| Green Valley Manufacturing (Factory 2) | `admin@factory2.com` | `factory2123` |
+
+Each factory has isolated employees, attendance, and settings.
 
 ### 3. Frontend (port 5173)
 

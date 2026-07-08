@@ -7,6 +7,20 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
+const adminSelect = {
+  id: true,
+  email: true,
+  name: true,
+  factoryId: true,
+  factory: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+    },
+  },
+};
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -14,7 +28,14 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const admin = await prisma.admin.findUnique({ where: { email } });
+    const admin = await prisma.admin.findUnique({
+      where: { email },
+      include: {
+        factory: {
+          select: { id: true, code: true, name: true },
+        },
+      },
+    });
     if (!admin) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -25,14 +46,25 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: admin.id, email: admin.email, name: admin.name },
+      {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        factoryId: admin.factoryId,
+      },
       config.jwtSecret,
       { expiresIn: '24h' }
     );
 
     res.json({
       token,
-      admin: { id: admin.id, email: admin.email, name: admin.name },
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        factoryId: admin.factoryId,
+        factory: admin.factory,
+      },
     });
   } catch (err) {
     console.error('logName=loginFailed, error=', err.message);
@@ -44,7 +76,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   try {
     const admin = await prisma.admin.findUnique({
       where: { id: req.admin.id },
-      select: { id: true, email: true, name: true },
+      select: adminSelect,
     });
     if (!admin) {
       return res.status(404).json({ error: 'Admin not found' });

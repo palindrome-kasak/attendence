@@ -1,17 +1,18 @@
 const express = require('express');
 const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
+const { getFactoryId } = require('../utils/factory');
 const { getTodayDateString } = require('../utils/attendance');
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-async function getTodayContext() {
+async function getTodayContext(factoryId) {
   const date = getTodayDateString();
 
   const registeredEmployees = await prisma.employee.findMany({
-    where: { faceEmbedding: { not: null } },
+    where: { factoryId, faceEmbedding: { not: null } },
     select: {
       id: true,
       employeeId: true,
@@ -23,7 +24,10 @@ async function getTodayContext() {
   });
 
   const todayRecords = await prisma.attendance.findMany({
-    where: { date },
+    where: {
+      date,
+      employee: { factoryId },
+    },
     include: {
       employee: {
         select: {
@@ -68,16 +72,17 @@ function mapAbsent(registeredEmployees, presentIds) {
     }));
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const { date, registeredEmployees, todayRecords, presentIds } =
-      await getTodayContext();
+      await getTodayContext(factoryId);
 
     const present = todayRecords.length;
     const absent = Math.max(0, registeredEmployees.length - present);
     const late = todayRecords.filter((record) => record.status === 'late').length;
-    const totalEmployees = await prisma.employee.count();
-    const settings = await prisma.settings.findFirst();
+    const totalEmployees = await prisma.employee.count({ where: { factoryId } });
+    const settings = await prisma.settings.findUnique({ where: { factoryId } });
 
     res.json({
       date,
@@ -113,6 +118,7 @@ router.get('/', async (_req, res) => {
 
 router.get('/today/:status', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const status = req.params.status;
     const allowed = ['present', 'absent', 'late'];
 
@@ -121,7 +127,7 @@ router.get('/today/:status', async (req, res) => {
     }
 
     const { date, registeredEmployees, todayRecords, presentIds } =
-      await getTodayContext();
+      await getTodayContext(factoryId);
 
     let employees = [];
     if (status === 'present') {

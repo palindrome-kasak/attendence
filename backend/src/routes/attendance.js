@@ -8,6 +8,7 @@ const {
   parseStoredEmbeddings,
 } = require('../services/aiService');
 const config = require('../config');
+const { getFactoryId } = require('../utils/factory');
 const { getTodayDateString, determineStatus } = require('../utils/attendance');
 
 const router = express.Router();
@@ -33,11 +34,15 @@ function buildEmployeePayload(employees) {
   }));
 }
 
-router.get('/today', async (_req, res) => {
+router.get('/today', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const date = getTodayDateString();
     const records = await prisma.attendance.findMany({
-      where: { date },
+      where: {
+        date,
+        employee: { factoryId },
+      },
       include: {
         employee: {
           select: { id: true, employeeId: true, name: true, department: true },
@@ -54,13 +59,14 @@ router.get('/today', async (_req, res) => {
 
 router.post('/scan', uploadFaceFields, async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const imagePaths = getUploadedImagePaths(req);
     if (imagePaths.length === 0) {
       return res.status(400).json({ error: 'At least one image is required' });
     }
 
     const employees = await prisma.employee.findMany({
-      where: { faceEmbedding: { not: null } },
+      where: { factoryId, faceEmbedding: { not: null } },
       select: { id: true, name: true, employeeId: true, faceEmbedding: true },
     });
 
@@ -74,7 +80,9 @@ router.post('/scan', uploadFaceFields, async (req, res) => {
         ? await recognizeFaceLive(imagePaths, payload)
         : await recognizeFace(imagePaths[0], payload);
 
-    const appSettings = await prisma.settings.findFirst();
+    const appSettings = await prisma.settings.findUnique({
+      where: { factoryId },
+    });
     const minConfidence =
       appSettings?.minFaceConfidence ?? config.minFaceConfidence;
 
@@ -97,11 +105,22 @@ router.post('/scan', uploadFaceFields, async (req, res) => {
       });
     }
 
+    const matchedEmployee = await prisma.employee.findFirst({
+      where: { id: result.employeeId, factoryId },
+    });
+    if (!matchedEmployee) {
+      return res.status(404).json({
+        matched: false,
+        message: 'Face matched but employee not found in this factory',
+        confidence: result.confidence,
+      });
+    }
+
     const date = getTodayDateString();
     const existing = await prisma.attendance.findUnique({
       where: {
         employeeId_date: {
-          employeeId: result.employeeId,
+          employeeId: matchedEmployee.id,
           date,
         },
       },
@@ -124,13 +143,13 @@ router.post('/scan', uploadFaceFields, async (req, res) => {
       });
     }
 
-    const settings = await prisma.settings.findFirst();
+    const settings = await prisma.settings.findUnique({ where: { factoryId } });
     const checkIn = new Date();
     const status = settings ? determineStatus(checkIn, settings) : 'present';
 
     const attendance = await prisma.attendance.create({
       data: {
-        employeeId: result.employeeId,
+        employeeId: matchedEmployee.id,
         date,
         checkIn,
         status,

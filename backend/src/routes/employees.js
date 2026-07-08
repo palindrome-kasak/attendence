@@ -8,6 +8,7 @@ const {
   registerFaceMulti,
   serializeEmbeddings,
 } = require('../services/aiService');
+const { getFactoryId } = require('../utils/factory');
 const {
   validateEmployeeInput,
   sanitizeEmployeePayload,
@@ -27,9 +28,11 @@ function getUploadedImagePaths(req) {
   return single ? [single.path] : [];
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const employees = await prisma.employee.findMany({
+      where: { factoryId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -58,8 +61,9 @@ router.get('/', async (_req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const employee = await prisma.employee.findUnique({
-      where: { id: Number(req.params.id) },
+    const factoryId = getFactoryId(req);
+    const employee = await prisma.employee.findFirst({
+      where: { id: Number(req.params.id), factoryId },
     });
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
@@ -77,6 +81,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const errors = validateEmployeeInput(req.body, { requireCore: true });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('. ') });
@@ -86,6 +91,7 @@ router.post('/', async (req, res) => {
 
     const employee = await prisma.employee.create({
       data: {
+        factoryId,
         employeeId: data.employeeId,
         name: data.name,
         department: data.department,
@@ -100,7 +106,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'Employee ID already exists' });
+      return res.status(409).json({ error: 'Employee ID already exists in this factory' });
     }
     console.error('logName=createEmployeeFailed, error=', err.message);
     res.status(500).json({ error: 'Failed to create employee' });
@@ -109,15 +115,23 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const errors = validateEmployeeInput(req.body, { requireCore: true });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('. ') });
     }
 
+    const existing = await prisma.employee.findFirst({
+      where: { id: Number(req.params.id), factoryId },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
     const data = sanitizeEmployeePayload(req.body);
 
     const employee = await prisma.employee.update({
-      where: { id: Number(req.params.id) },
+      where: { id: existing.id },
       data: {
         employeeId: data.employeeId,
         name: data.name,
@@ -134,6 +148,9 @@ router.put('/:id', async (req, res) => {
     if (err.code === 'P2025') {
       return res.status(404).json({ error: 'Employee not found' });
     }
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Employee ID already exists in this factory' });
+    }
     console.error('logName=updateEmployeeFailed, error=', err.message);
     res.status(500).json({ error: 'Failed to update employee' });
   }
@@ -141,7 +158,15 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await prisma.employee.delete({ where: { id: Number(req.params.id) } });
+    const factoryId = getFactoryId(req);
+    const existing = await prisma.employee.findFirst({
+      where: { id: Number(req.params.id), factoryId },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    await prisma.employee.delete({ where: { id: existing.id } });
     res.json({ message: 'Employee deleted' });
   } catch (err) {
     if (err.code === 'P2025') {
@@ -154,13 +179,14 @@ router.delete('/:id', async (req, res) => {
 
 router.post('/:id/register-face', uploadFaceFields, async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const imagePaths = getUploadedImagePaths(req);
     if (imagePaths.length === 0) {
       return res.status(400).json({ error: 'Image file is required' });
     }
 
-    const employee = await prisma.employee.findUnique({
-      where: { id: Number(req.params.id) },
+    const employee = await prisma.employee.findFirst({
+      where: { id: Number(req.params.id), factoryId },
     });
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });

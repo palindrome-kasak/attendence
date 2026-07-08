@@ -1,20 +1,24 @@
 const express = require('express');
 const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
+const { getFactoryId } = require('../utils/factory');
 const { validateSettingsInput } = require('../utils/settings');
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    let settings = await prisma.settings.findFirst();
+    const factoryId = getFactoryId(req);
+    let settings = await prisma.settings.findUnique({ where: { factoryId } });
 
     if (!settings) {
+      const factory = await prisma.factory.findUnique({ where: { id: factoryId } });
       settings = await prisma.settings.create({
         data: {
-          factoryName: 'Factory Attendance',
+          factoryId,
+          factoryName: factory?.name || 'Factory Attendance',
           shiftStart: '09:00',
           shiftEnd: '18:00',
           lateAfter: '09:15',
@@ -32,6 +36,7 @@ router.get('/', async (_req, res) => {
 
 router.put('/', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const errors = validateSettingsInput(req.body);
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('. ') });
@@ -48,15 +53,18 @@ router.put('/', async (req, res) => {
       data.minFaceConfidence = Number(req.body.minFaceConfidence);
     }
 
-    let settings = await prisma.settings.findFirst();
-    if (!settings) {
-      settings = await prisma.settings.create({ data });
-    } else {
-      settings = await prisma.settings.update({
-        where: { id: settings.id },
-        data,
-      });
-    }
+    const settings = await prisma.settings.upsert({
+      where: { factoryId },
+      update: data,
+      create: {
+        factoryId,
+        factoryName: data.factoryName || 'Factory Attendance',
+        shiftStart: data.shiftStart || '09:00',
+        shiftEnd: data.shiftEnd || '18:00',
+        lateAfter: data.lateAfter || '09:15',
+        minFaceConfidence: data.minFaceConfidence ?? 65,
+      },
+    });
 
     res.json({
       message: 'Settings updated successfully',

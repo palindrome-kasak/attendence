@@ -17,7 +17,9 @@ export default function Layout() {
       <aside className="flex w-64 flex-col border-r border-slate-200 bg-brand-900 text-white">
         <div className="border-b border-white/10 px-6 py-5">
           <h1 className="text-lg font-bold">FaceAttend</h1>
-          <p className="text-sm text-slate-300">Factory Attendance</p>
+          <p className="text-sm text-slate-300">
+            {admin?.factory?.name || 'Factory Attendance'}
+          </p>
         </div>
 
         <nav className="flex-1 space-y-1 p-4">

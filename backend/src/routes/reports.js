@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const authMiddleware = require('../middleware/auth');
+const { getFactoryId } = require('../utils/factory');
 const {
   getMonthRange,
   buildMonthlySummary,
@@ -13,6 +14,7 @@ router.use(authMiddleware);
 
 router.get('/monthly', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const month = req.query.month;
     if (!month) {
       return res.status(400).json({ error: 'month query param is required (YYYY-MM)' });
@@ -21,6 +23,7 @@ router.get('/monthly', async (req, res) => {
     const { startDate, endDate, totalDays } = getMonthRange(month);
 
     const employees = await prisma.employee.findMany({
+      where: { factoryId },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -37,6 +40,7 @@ router.get('/monthly', async (req, res) => {
           gte: startDate,
           lte: endDate,
         },
+        employee: { factoryId },
       },
       select: {
         employeeId: true,
@@ -71,6 +75,7 @@ router.get('/monthly', async (req, res) => {
 
 router.get('/export', async (req, res) => {
   try {
+    const factoryId = getFactoryId(req);
     const month = req.query.month;
     const format = req.query.format || 'csv';
 
@@ -84,6 +89,7 @@ router.get('/export', async (req, res) => {
     const { startDate, endDate, totalDays } = getMonthRange(month);
 
     const employees = await prisma.employee.findMany({
+      where: { factoryId },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -100,6 +106,7 @@ router.get('/export', async (req, res) => {
           gte: startDate,
           lte: endDate,
         },
+        employee: { factoryId },
       },
       select: {
         employeeId: true,

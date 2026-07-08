@@ -7,17 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Factory {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String
+  createdAt DateTime   @default(now())
+  admins    Admin[]
+  employees Employee[]
+  settings  Settings?
+}
+
 model Admin {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   password  String
   name      String
+  factoryId Int
+  factory   Factory  @relation(fields: [factoryId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 
 model Employee {
   id            Int          @id @default(autoincrement())
-  employeeId    String       @unique
+  factoryId     Int
+  factory       Factory      @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+  employeeId    String
   name          String
   department    String?
   phone         String?
@@ -25,6 +39,8 @@ model Employee {
   faceEmbedding String?
   createdAt     DateTime     @default(now())
   attendance    Attendance[]
+
+  @@unique([factoryId, employeeId])
 }
 
 model Attendance {
@@ -42,10 +58,12 @@ model Attendance {
 }
 
 model Settings {
-  id          Int    @id @default(autoincrement())
-  factoryName String @default("Factory Attendance")
-  shiftStart  String @default("09:00")
-  shiftEnd    String @default("18:00")
-  lateAfter         String @default("09:15")
-  minFaceConfidence Int    @default(70)
+  id                Int     @id @default(autoincrement())
+  factoryId         Int     @unique
+  factory           Factory @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+  factoryName       String  @default("Factory Attendance")
+  shiftStart        String  @default("09:00")
+  shiftEnd          String  @default("18:00")
+  lateAfter         String  @default("09:15")
+  minFaceConfidence Int     @default(65)
 }
