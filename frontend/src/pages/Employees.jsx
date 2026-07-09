@@ -96,6 +96,7 @@ export default function Employees() {
   async function handleFaceRegister(capture) {
     setCameraOpen(false);
     setError('');
+    setMessage('');
     try {
       await api.registerFace(registeringId, capture);
       setMessage(

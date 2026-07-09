@@ -44,7 +44,8 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`logName=serverStarted, port=${config.port}`);
+  const aiHost = new URL(config.aiServiceUrl).host;
+  console.log(`logName=serverStarted, port=${config.port}, aiServiceHost=${aiHost}`);
 });
 
 module.exports = app;

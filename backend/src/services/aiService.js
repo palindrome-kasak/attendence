@@ -1,38 +1,70 @@
 const fs = require('fs');
 const path = require('path');
+const FormData = require('form-data');
 const config = require('../config');
 
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 120000;
+
 function buildImageFormData(imagePath) {
-  const fileBuffer = fs.readFileSync(imagePath);
   const ext = path.extname(imagePath).toLowerCase();
   const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
   const form = new FormData();
-  const blob = new Blob([fileBuffer], { type: mimeType });
-  form.append('image', blob, `face${ext || '.jpg'}`);
+  form.append('image', fs.createReadStream(imagePath), {
+    filename: `face${ext || '.jpg'}`,
+    contentType: mimeType,
+  });
   return form;
 }
 
 function buildMultiImageFormData(imagePaths) {
   const form = new FormData();
   imagePaths.forEach((imagePath, index) => {
-    const fileBuffer = fs.readFileSync(imagePath);
     const ext = path.extname(imagePath).toLowerCase();
     const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-    const blob = new Blob([fileBuffer], { type: mimeType });
-    form.append('images', blob, `frame-${index + 1}${ext || '.jpg'}`);
+    form.append('images', fs.createReadStream(imagePath), {
+      filename: `frame-${index + 1}${ext || '.jpg'}`,
+      contentType: mimeType,
+    });
   });
   return form;
 }
 
+function mapAiError(status, body) {
+  if (status === 502 || status === 503 || status === 504) {
+    return 'AI service is waking up or unavailable. Wait 30 seconds and try again.';
+  }
+  if (status >= 500) {
+    return 'AI service failed while processing the image. Please retry in a moment.';
+  }
+  if (body) {
+    return body;
+  }
+  return 'AI service request failed';
+}
+
 async function postAiForm(endpoint, form) {
-  const response = await fetch(`${config.aiServiceUrl}${endpoint}`, {
-    method: 'POST',
-    body: form,
-  });
+  let response;
+  try {
+    response = await fetch(`${config.aiServiceUrl}${endpoint}`, {
+      method: 'POST',
+      body: form,
+      headers: form.getHeaders(),
+      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err.name === 'TimeoutError') {
+      throw new Error(
+        'AI service timed out. It may be waking from sleep — wait 30 seconds and try again.'
+      );
+    }
+    throw new Error(
+      'Could not reach the AI service. Check that faceattend-ai is running on Render.'
+    );
+  }
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`AI request failed: ${body}`);
+    throw new Error(mapAiError(response.status, body));
   }
 
   return response.json();

@@ -14,6 +14,11 @@ _models_ready = False
 REGISTER_JITTERS = int(os.environ.get("FACE_REGISTER_JITTERS", "5"))
 MULTI_REGISTER_JITTERS = int(os.environ.get("FACE_MULTI_REGISTER_JITTERS", "3"))
 RECOGNIZE_JITTERS = int(os.environ.get("FACE_RECOGNIZE_JITTERS", "3"))
+MAX_IMAGE_DIMENSION = int(os.environ.get("FACE_MAX_IMAGE_DIMENSION", "640"))
+
+
+class ImageLoadError(ValueError):
+    pass
 
 
 def get_face_recognition():
@@ -138,7 +143,40 @@ def get_single_face_embedding(
 def load_image_bytes(contents: bytes) -> np.ndarray:
     import io
 
-    return get_face_recognition().load_image_file(io.BytesIO(contents))
+    from PIL import Image
+
+    if not contents:
+        raise ImageLoadError("Image file is empty.")
+
+    try:
+        image = Image.open(io.BytesIO(contents))
+        image = image.convert("RGB")
+        if max(image.size) > MAX_IMAGE_DIMENSION:
+            image.thumbnail(
+                (MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION),
+                Image.Resampling.LANCZOS,
+            )
+        return np.array(image)
+    except ImageLoadError:
+        raise
+    except Exception as exc:
+        raise ImageLoadError("Invalid or unreadable image file.") from exc
+
+
+def face_failure(message: str) -> dict:
+    return {
+        "success": False,
+        "message": message,
+        "embedding": [],
+        "embeddings": [],
+    }
+
+
+def match_failure(message: str, live: Optional[bool] = None) -> dict:
+    payload = {"matched": False, "message": message}
+    if live is not None:
+        payload["live"] = live
+    return payload
 
 
 def box_center(box: tuple) -> Tuple[float, float]:
@@ -187,14 +225,17 @@ def health():
 
 @app.post("/register")
 async def register_face(image: UploadFile = File(...)):
-    contents = await image.read()
-    image_array = load_image_bytes(contents)
-    embedding, error, _box = get_single_face_embedding(
-        image_array, num_jitters=REGISTER_JITTERS
-    )
+    try:
+        contents = await image.read()
+        image_array = load_image_bytes(contents)
+        embedding, error, _box = get_single_face_embedding(
+            image_array, num_jitters=REGISTER_JITTERS
+        )
+    except ImageLoadError as exc:
+        return face_failure(str(exc))
 
     if embedding is None:
-        return {"success": False, "message": error, "embedding": [], "embeddings": []}
+        return face_failure(error or "No face detected in image")
 
     return {
         "success": True,
@@ -216,18 +257,17 @@ async def register_multi_faces(images: List[UploadFile] = File(...)):
 
     collected = []
     for image in images[:3]:
-        contents = await image.read()
-        image_array = load_image_bytes(contents)
-        embedding, error, _box = get_single_face_embedding(
-            image_array, num_jitters=MULTI_REGISTER_JITTERS
-        )
+        try:
+            contents = await image.read()
+            image_array = load_image_bytes(contents)
+            embedding, error, _box = get_single_face_embedding(
+                image_array, num_jitters=MULTI_REGISTER_JITTERS
+            )
+        except ImageLoadError as exc:
+            return face_failure(str(exc))
+
         if embedding is None:
-            return {
-                "success": False,
-                "message": error,
-                "embedding": [],
-                "embeddings": [],
-            }
+            return face_failure(error or "No face detected in image")
         collected.append(embedding)
 
     averaged = np.mean(np.array(collected), axis=0).tolist()
@@ -247,14 +287,17 @@ async def recognize_face(
     threshold: float = Form(DEFAULT_THRESHOLD),
     ambiguity_gap: float = Form(DEFAULT_AMBIGUITY_GAP),
 ):
-    contents = await image.read()
-    image_array = load_image_bytes(contents)
-    unknown_encoding, error, _box = get_single_face_embedding(
-        image_array, num_jitters=RECOGNIZE_JITTERS
-    )
+    try:
+        contents = await image.read()
+        image_array = load_image_bytes(contents)
+        unknown_encoding, error, _box = get_single_face_embedding(
+            image_array, num_jitters=RECOGNIZE_JITTERS
+        )
+    except ImageLoadError as exc:
+        return match_failure(str(exc))
 
     if unknown_encoding is None:
-        return {"matched": False, "message": error or "No face detected in image"}
+        return match_failure(error or "No face detected in image")
 
     employee_list = json.loads(employees)
     if not employee_list:
@@ -316,7 +359,12 @@ async def recognize_live(
             "message": "Live scan requires multiple camera frames.",
         }
 
-    image_arrays = [load_image_bytes(await image.read()) for image in images[:3]]
+    image_arrays = []
+    for image in images[:3]:
+        try:
+            image_arrays.append(load_image_bytes(await image.read()))
+        except ImageLoadError as exc:
+            return match_failure(str(exc), live=False)
 
     is_live, liveness_message = verify_liveness(image_arrays)
     if not is_live:
