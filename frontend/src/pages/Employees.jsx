@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { apiUrl } from '../utils/apiRoot';
 import WebcamCapture from '../components/WebcamCapture';
 
 const emptyForm = { employeeId: '', name: '', department: '', phone: '' };
@@ -258,7 +259,7 @@ export default function Employees() {
                 <td className="py-3 pr-4">
                   {emp.photoPath ? (
                     <img
-                      src={emp.photoPath}
+                      src={apiUrl(emp.photoPath)}
                       alt={emp.name}
                       className="h-10 w-10 rounded-full object-cover"
                     />

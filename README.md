@@ -68,6 +68,18 @@ npm run dev
 
 Open http://localhost:5173
 
+## Production deploy (Render)
+
+All three services deploy from one `render.yaml` blueprint:
+
+| Service | Host |
+|---------|------|
+| Frontend | https://faceattend-web.onrender.com |
+| API | https://faceattend-api.onrender.com |
+| AI | https://faceattend-ai.onrender.com |
+
+See [DEPLOY.md](./DEPLOY.md) for full steps.
+
 ## Attendance Flow
 
 1. Admin registers employees with photo (upload or webcam capture).

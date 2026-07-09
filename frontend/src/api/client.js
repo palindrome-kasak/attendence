@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+import { apiUrl } from '../utils/apiRoot';
+
+const API_BASE = apiUrl('/api');
 
 function getToken() {
   return localStorage.getItem('token');

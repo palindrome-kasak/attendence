@@ -15,6 +15,3 @@ venv/
 *.log
 coverage/
 .prisma/
-
-# Local Netlify folder
-.netlify
