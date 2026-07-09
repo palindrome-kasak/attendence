@@ -63,7 +63,7 @@ VITE_API_URL=https://faceattend-api.onrender.com npm run dev
 
 | Variable | Value |
 |----------|-------|
-| `AI_SERVICE_URL` | `https://faceattend-ai.onrender.com` |
+| `AI_SERVICE_URL` | Auto-linked from `faceattend-ai` (`RENDER_EXTERNAL_URL`) |
 | `DATABASE_URL` | `file:./dev.db` |
 | `JWT_SECRET` | Auto-generated |
 

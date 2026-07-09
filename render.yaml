@@ -51,7 +51,10 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: AI_SERVICE_URL
-        value: https://faceattend-ai.onrender.com
+        fromService:
+          name: faceattend-ai
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: UPLOAD_DIR
         value: uploads
       - key: FACE_MATCH_THRESHOLD
