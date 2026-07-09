@@ -1,21 +1,16 @@
-FROM python:3.11-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
-    build-essential \
-    libopenblas-dev \
-    liblapack-dev \
-    libjpeg62-turbo-dev \
-    && rm -rf /var/lib/apt/lists/*
+FROM mambaorg/micromamba:1.5.10
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/environment.yml
+
+RUN micromamba install -y -n base -f /tmp/environment.yml && \
+    micromamba clean --all --yes
 
 COPY main.py .
 
-ENV PORT=8001
+ENV MAMBA_DOCKERFILE_ACTIVATE=1
+
 EXPOSE 8001
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "-c", "/opt/conda/bin/uvicorn main:app --host 0.0.0.0 --port ${PORT:-8001}"]
