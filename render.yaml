@@ -26,6 +26,13 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /health
+    envVars:
+      - key: FACE_REGISTER_JITTERS
+        value: "3"
+      - key: FACE_MULTI_REGISTER_JITTERS
+        value: "2"
+      - key: FACE_RECOGNIZE_JITTERS
+        value: "2"
     buildFilter:
       paths:
         - ai-service/**

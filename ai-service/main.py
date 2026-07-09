@@ -1,12 +1,47 @@
+import asyncio
 import json
+import os
+from contextlib import asynccontextmanager
 from typing import List, Optional, Tuple
 
-import face_recognition
 import numpy as np
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="FaceAttend AI Service", version="1.0.0")
+_face_recognition = None
+_models_ready = False
+
+REGISTER_JITTERS = int(os.environ.get("FACE_REGISTER_JITTERS", "5"))
+MULTI_REGISTER_JITTERS = int(os.environ.get("FACE_MULTI_REGISTER_JITTERS", "3"))
+RECOGNIZE_JITTERS = int(os.environ.get("FACE_RECOGNIZE_JITTERS", "3"))
+
+
+def get_face_recognition():
+    global _face_recognition
+    if _face_recognition is None:
+        import face_recognition
+
+        _face_recognition = face_recognition
+    return _face_recognition
+
+
+def preload_face_models() -> None:
+    global _models_ready
+    get_face_recognition()
+    _models_ready = True
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    asyncio.create_task(asyncio.to_thread(preload_face_models))
+    yield
+
+
+app = FastAPI(
+    title="FaceAttend AI Service",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,7 +69,9 @@ def max_pairwise_encoding_distance(encodings: List[np.ndarray]) -> float:
     for index in range(len(encodings)):
         for other in range(index + 1, len(encodings)):
             distance = float(
-                face_recognition.face_distance([encodings[index]], encodings[other])[0]
+                get_face_recognition().face_distance(
+                    [encodings[index]], encodings[other]
+                )[0]
             )
             max_distance = max(max_distance, distance)
     return max_distance
@@ -70,11 +107,12 @@ def verify_liveness(images: List[np.ndarray]) -> Tuple[bool, str]:
 
 
 def detect_face_locations(image: np.ndarray) -> List[tuple]:
-    locations = face_recognition.face_locations(image, number_of_times_to_upsample=1)
+    fr = get_face_recognition()
+    locations = fr.face_locations(image, number_of_times_to_upsample=1)
     if locations:
         return locations
 
-    return face_recognition.face_locations(image, number_of_times_to_upsample=2)
+    return fr.face_locations(image, number_of_times_to_upsample=2)
 
 
 def get_single_face_embedding(
@@ -88,7 +126,7 @@ def get_single_face_embedding(
     if len(locations) > 1:
         return None, "Multiple faces detected. Only one person should be in frame.", None
 
-    encodings = face_recognition.face_encodings(
+    encodings = get_face_recognition().face_encodings(
         image, locations, num_jitters=num_jitters
     )
     if not encodings:
@@ -100,7 +138,7 @@ def get_single_face_embedding(
 def load_image_bytes(contents: bytes) -> np.ndarray:
     import io
 
-    return face_recognition.load_image_file(io.BytesIO(contents))
+    return get_face_recognition().load_image_file(io.BytesIO(contents))
 
 
 def box_center(box: tuple) -> Tuple[float, float]:
@@ -128,7 +166,9 @@ def best_employee_match(
 
     for employee in employee_list:
         for stored in employee_embeddings(employee):
-            distance = float(face_recognition.face_distance([stored], unknown_np)[0])
+            distance = float(
+                get_face_recognition().face_distance([stored], unknown_np)[0]
+            )
             if distance < best_distance:
                 best_distance = distance
                 best_match = employee
@@ -138,14 +178,20 @@ def best_employee_match(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai-service"}
+    return {
+        "status": "ok",
+        "service": "ai-service",
+        "modelsReady": _models_ready,
+    }
 
 
 @app.post("/register")
 async def register_face(image: UploadFile = File(...)):
     contents = await image.read()
     image_array = load_image_bytes(contents)
-    embedding, error, _box = get_single_face_embedding(image_array, num_jitters=5)
+    embedding, error, _box = get_single_face_embedding(
+        image_array, num_jitters=REGISTER_JITTERS
+    )
 
     if embedding is None:
         return {"success": False, "message": error, "embedding": [], "embeddings": []}
@@ -172,7 +218,9 @@ async def register_multi_faces(images: List[UploadFile] = File(...)):
     for image in images[:3]:
         contents = await image.read()
         image_array = load_image_bytes(contents)
-        embedding, error, _box = get_single_face_embedding(image_array, num_jitters=3)
+        embedding, error, _box = get_single_face_embedding(
+            image_array, num_jitters=MULTI_REGISTER_JITTERS
+        )
         if embedding is None:
             return {
                 "success": False,
@@ -201,7 +249,9 @@ async def recognize_face(
 ):
     contents = await image.read()
     image_array = load_image_bytes(contents)
-    unknown_encoding, error, _box = get_single_face_embedding(image_array, num_jitters=3)
+    unknown_encoding, error, _box = get_single_face_embedding(
+        image_array, num_jitters=RECOGNIZE_JITTERS
+    )
 
     if unknown_encoding is None:
         return {"matched": False, "message": error or "No face detected in image"}
@@ -215,7 +265,9 @@ async def recognize_face(
 
     for employee in employee_list:
         for stored in employee_embeddings(employee):
-            distance = float(face_recognition.face_distance([stored], unknown_np)[0])
+            distance = float(
+                get_face_recognition().face_distance([stored], unknown_np)[0]
+            )
             matches.append((distance, employee))
 
     matches.sort(key=lambda item: item[0])
@@ -277,7 +329,9 @@ async def recognize_live(
     best_result = None
 
     for image_array in image_arrays:
-        unknown_encoding, error, _box = get_single_face_embedding(image_array, num_jitters=3)
+        unknown_encoding, error, _box = get_single_face_embedding(
+            image_array, num_jitters=RECOGNIZE_JITTERS
+        )
         if unknown_encoding is None:
             continue
 
@@ -286,7 +340,9 @@ async def recognize_live(
 
         for employee in employee_list:
             for stored in employee_embeddings(employee):
-                distance = float(face_recognition.face_distance([stored], unknown_np)[0])
+                distance = float(
+                get_face_recognition().face_distance([stored], unknown_np)[0]
+            )
                 matches.append((distance, employee))
 
         if not matches:
