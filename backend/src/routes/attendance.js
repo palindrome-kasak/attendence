@@ -6,6 +6,7 @@ const {
   recognizeFace,
   recognizeFaceLive,
   parseStoredEmbeddings,
+  wakeAiService,
 } = require('../services/aiService');
 const config = require('../config');
 const { getFactoryId } = require('../utils/factory');
@@ -72,6 +73,14 @@ router.post('/scan', uploadFaceFields, async (req, res) => {
 
     if (employees.length === 0) {
       return res.status(422).json({ error: 'No employees with registered faces' });
+    }
+
+    const aiReady = await wakeAiService();
+    if (!aiReady) {
+      return res.status(503).json({
+        error:
+          'AI service is still waking up on Render. Wait 30 seconds and try again.',
+      });
     }
 
     const payload = buildEmployeePayload(employees);

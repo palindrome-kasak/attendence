@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client';
 import WebcamCapture from '../components/WebcamCapture';
+import { warmupAiService } from '../utils/warmupAi';
 
 function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('en-IN', {
@@ -14,6 +15,21 @@ export default function LiveScan() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [warmingAi, setWarmingAi] = useState(false);
+
+  async function startAttendance() {
+    setError('');
+    setResult(null);
+    setWarmingAi(true);
+    try {
+      await warmupAiService();
+      setCameraOpen(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWarmingAi(false);
+    }
+  }
 
   async function handleCapture(capture) {
     setCameraOpen(false);
@@ -44,14 +60,16 @@ export default function LiveScan() {
           <p className="mb-6 text-slate-600">Today&apos;s Attendance</p>
           <button
             className="btn-primary px-8 py-3 text-lg"
-            onClick={() => {
-              setError('');
-              setResult(null);
-              setCameraOpen(true);
-            }}
+            disabled={warmingAi}
+            onClick={startAttendance}
           >
-            Start Attendance
+            {warmingAi ? 'Starting AI service...' : 'Start Attendance'}
           </button>
+          {warmingAi && (
+            <p className="mt-4 text-sm text-slate-500">
+              Render free tier can take up to 60 seconds to wake the AI service.
+            </p>
+          )}
         </div>
       )}
 

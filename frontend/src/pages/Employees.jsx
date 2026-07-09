@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { apiUrl } from '../utils/apiRoot';
 import WebcamCapture from '../components/WebcamCapture';
+import { warmupAiService } from '../utils/warmupAi';
 
 const emptyForm = { employeeId: '', name: '', department: '', phone: '' };
 
@@ -17,6 +18,7 @@ export default function Employees() {
   const [registeringId, setRegisteringId] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [uploadTargetId, setUploadTargetId] = useState(null);
+  const [warmingAiId, setWarmingAiId] = useState(null);
   const formRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -119,6 +121,22 @@ export default function Employees() {
     }
   }
 
+  async function openFaceCapture(employeeId) {
+    setError('');
+    setMessage('');
+    setWarmingAiId(employeeId);
+    try {
+      await warmupAiService((status) => setMessage(status));
+      setRegisteringId(employeeId);
+      setCameraOpen(true);
+      setMessage('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWarmingAiId(null);
+    }
+  }
+
   async function handleFileUpload(e) {
     const file = e.target.files?.[0];
     const employeeId = uploadTargetId;
@@ -136,13 +154,17 @@ export default function Employees() {
 
     setError('');
     setMessage('');
+    setWarmingAiId(employeeId);
     try {
+      await warmupAiService((status) => setMessage(status));
+      setMessage('');
       await api.registerFace(employeeId, file);
       setMessage('Face registered from photo');
       await loadEmployees();
     } catch (err) {
       setError(err.message);
     } finally {
+      setWarmingAiId(null);
       setUploadTargetId(null);
     }
   }
@@ -299,12 +321,10 @@ export default function Employees() {
                     <button
                       type="button"
                       className="btn-primary text-xs"
-                      onClick={() => {
-                        setRegisteringId(emp.id);
-                        setCameraOpen(true);
-                      }}
+                      disabled={warmingAiId === emp.id}
+                      onClick={() => openFaceCapture(emp.id)}
                     >
-                      Capture Face
+                      {warmingAiId === emp.id ? 'Starting AI...' : 'Capture Face'}
                     </button>
                     <button
                       type="button"

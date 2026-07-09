@@ -9,6 +9,7 @@ const attendanceRoutes = require('./routes/attendance');
 const dashboardRoutes = require('./routes/dashboard');
 const reportRoutes = require('./routes/reports');
 const settingsRoutes = require('./routes/settings');
+const aiRoutes = require('./routes/ai');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.use((err, _req, res, _next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {

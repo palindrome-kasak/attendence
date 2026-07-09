@@ -74,3 +74,9 @@ services:
         value: "0.08"
       - key: MAX_UPLOAD_SIZE_MB
         value: "10"
+      - key: AI_REQUEST_TIMEOUT_MS
+        value: "180000"
+      - key: AI_WAKE_MAX_MS
+        value: "120000"
+      - key: AI_RETRY_ATTEMPTS
+        value: "4"

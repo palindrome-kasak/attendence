@@ -7,6 +7,7 @@ const {
   registerFace,
   registerFaceMulti,
   serializeEmbeddings,
+  wakeAiService,
 } = require('../services/aiService');
 const { getFactoryId } = require('../utils/factory');
 const {
@@ -190,6 +191,14 @@ router.post('/:id/register-face', uploadFaceFields, async (req, res) => {
     });
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const aiReady = await wakeAiService();
+    if (!aiReady) {
+      return res.status(503).json({
+        error:
+          'AI service is still waking up on Render. Wait 30 seconds and try again.',
+      });
     }
 
     const result =

@@ -31,6 +31,12 @@ const config = {
   faceAmbiguityGap: Number(process.env.FACE_AMBIGUITY_GAP) || 0.08,
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
   maxUploadSizeMb: Number(process.env.MAX_UPLOAD_SIZE_MB) || 10,
+  aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS) || 180000,
+  aiRetryAttempts: Number(process.env.AI_RETRY_ATTEMPTS) || 4,
+  aiRetryDelayMs: Number(process.env.AI_RETRY_DELAY_MS) || 12000,
+  aiWakeMaxMs: Number(process.env.AI_WAKE_MAX_MS) || 120000,
+  aiWakePollMs: Number(process.env.AI_WAKE_POLL_MS) || 8000,
+  aiHealthTimeoutMs: Number(process.env.AI_HEALTH_TIMEOUT_MS) || 45000,
   get maxUploadSizeBytes() {
     return this.maxUploadSizeMb * 1024 * 1024;
   },
