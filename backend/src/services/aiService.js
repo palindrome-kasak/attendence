@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const FormData = require('form-data');
 const config = require('../config');
 
 const AI_REQUEST_TIMEOUT_MS = config.aiRequestTimeoutMs;
@@ -14,14 +13,20 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function imageMimeType(imagePath) {
+  const ext = path.extname(imagePath).toLowerCase();
+  return ext === '.png' ? 'image/png' : 'image/jpeg';
+}
+
+function imageBlob(imagePath) {
+  const fileBuffer = fs.readFileSync(imagePath);
+  return new Blob([fileBuffer], { type: imageMimeType(imagePath) });
+}
+
 function buildImageFormData(imagePath) {
   const ext = path.extname(imagePath).toLowerCase();
-  const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
   const form = new FormData();
-  form.append('image', fs.createReadStream(imagePath), {
-    filename: `face${ext || '.jpg'}`,
-    contentType: mimeType,
-  });
+  form.append('image', imageBlob(imagePath), `face${ext || '.jpg'}`);
   return form;
 }
 
@@ -29,11 +34,11 @@ function buildMultiImageFormData(imagePaths) {
   const form = new FormData();
   imagePaths.forEach((imagePath, index) => {
     const ext = path.extname(imagePath).toLowerCase();
-    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-    form.append('images', fs.createReadStream(imagePath), {
-      filename: `frame-${index + 1}${ext || '.jpg'}`,
-      contentType: mimeType,
-    });
+    form.append(
+      'images',
+      imageBlob(imagePath),
+      `frame-${index + 1}${ext || '.jpg'}`
+    );
   });
   return form;
 }
@@ -43,6 +48,9 @@ function isRetryableStatus(status) {
 }
 
 function mapAiError(status, body) {
+  if (status === 400) {
+    return 'AI service rejected the image upload. Please retry face capture.';
+  }
   if (isRetryableStatus(status)) {
     return 'AI service is still waking up on Render. Please wait and try again.';
   }
@@ -104,7 +112,6 @@ async function postAiForm(endpoint, buildForm) {
       const response = await fetch(`${config.aiServiceUrl}${endpoint}`, {
         method: 'POST',
         body: form,
-        headers: form.getHeaders(),
         signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
       });
 
